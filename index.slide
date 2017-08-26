@@ -1,0 +1,148 @@
+システム構築にgRPCを導入した話
+golang.tokyo #8
+28 Aug 2017
+
+dice_zu(daisuzu)
+@dice_zu
+https://github.com/daisuzu
+http://daisuzu.hatenablog.com
+
+
+* 自己紹介
+
+.image icon.png
+
+Twitter: [[https://twitter.com/dice_zu][@dice_zu]]
+GitHub: [[https://github.com/daisuzu][https://github.com/daisuzu]]
+Blog: [[http://daisuzu.hatenablog.com][http://daisuzu.hatenablog.com]]
+
+- サーバサイドエンジニア(最近はGoばっかり)
+- Vimmer(プラグイン、雑誌記事、本体パッチ)
+
+
+* gRPCとは？
+
+Google製のRPC
+
+- Protocol Buffersでインターフェースを定義
+- HTTP/2上でデータを転送
+- Go用のパッケージは [[https://godoc.org/google.golang.org/grpc][google.golang.org/grpc]]
+
+
+* 構築したシステム
+
+以下のような契約管理システム
+
+1. クライアントからオーダーを受け付けて、
+2. 外部のシステムに送信すると、
+3. 非同期で処理結果が返ってくるので、
+4. それをクライアントに返す。
+
+.code system.txt
+
+
+* なぜgRPCを採用したのか
+
+
+* RESTのエンドポイント辛い問題
+
+- 契約系のオペレーションはRESTで表現しにくい
+- 機能拡張時に破綻する可能性がある
+- 実際それで失敗したこともある
+
+
+* コード生成で開発の効率化
+
+- 以下のような定義からクライアントとサーバのコードが生成可能
+
+.code example.proto
+
+JSON SchemaやSwaggerと比べると、
+
+- 定義ファイルが書きやすい
+- クライアントを自力で実装するのが困難
+
+
+* Streaming RPC
+
+- ポーリングやコールバックなどの実装が不要
+
+
+* 他システムの刷新を促進
+
+想定クライアントが
+
+- Go
+- Python
+- Java
+- _(もしかしたら)_ Perl
+
+だったので全体的にgRPC対応のモダンなシステムにしたかった
+
+
+* しかし...
+
+
+* ほとんどのクライアントがRESTを要求
+
+*OK*
+
+- Go
+
+*NG*
+
+- Python
+- Java
+- Perl
+
+結局 [[https://github.com/grpc-ecosystem/grpc-gateway][grpc-gateway]] を使ってRESTインターフェースも提供した
+
+- エンドポイントは残念なことに...
+- コールバックも実装することに...
+
+
+* 開発を終えての感想
+
+
+* 良かったところ
+
+- Streaming RPCが想定通りに使えた
+
+- 生成されるコードが自分好み
+
+メッセージのstructとサービスのinterfaceのみ
+余計なものが含まれない
+
+- パラメータのバインドを [[https://godoc.org/google.golang.org/grpc][google.golang.org/grpc]] に任せられる
+
+.code main.go
+
+
+* 困ったところ
+
+- curlのように使えるクライアントが無い
+
+生成されたコード _(pbパッケージ)_ からクライアントを生成するツールを作った
+
+- サーバのレスポンスにnilのフィールドがあるとpanicした
+
+_(今は改善されているが)_ 何も対策をしてないとサーバが落ちる
+レスポンスの生成に気をつけつつ、interceptorでハンドリング
+
+- docker stackでシステムを立ち上げてしばらく経つと接続エラーが発生した
+
+gRPCは常時接続だが、無通信の間に接続先コンテナが替わってしまうことがあった
+この時、次のリクエストを送信するまでエラーにならないので発見が遅れた
+クライアント側の [[https://godoc.org/google.golang.org/grpc#WithDialer][grpc.WithDialer]] でTCPのkeepaliveを設定して回避
+
+
+* まとめ
+
+- コード生成のおかげもあってスムーズに開発することができた
+- 小さい穴にハマることはあったがgRPC絡みの大きなトラブルは無かった
+- gRPCはもっと流行って良いと思うので
+
+*興味がある人は是非導入を！*
+*そして知見の共有をお願いしますm(_*_)m*
+
+

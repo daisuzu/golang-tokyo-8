@@ -1,0 +1,549 @@
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>システム構築にgRPCを導入した話</title>
+    <meta charset='utf-8'>
+    <script>
+      var notesEnabled =  false ;
+    </script>
+    <script src='static/slides.js'></script>
+
+    
+
+    <script>
+      
+      if (window["location"] && window["location"]["hostname"] == "talks.golang.org") {
+        var _gaq = _gaq || [];
+        _gaq.push(["_setAccount", "UA-11222381-6"]);
+        _gaq.push(["b._setAccount", "UA-49880327-6"]);
+        window.trackPageview = function() {
+          _gaq.push(["_trackPageview", location.pathname+location.hash]);
+          _gaq.push(["b._trackPageview", location.pathname+location.hash]);
+        };
+        window.trackPageview();
+        window.trackEvent = function(category, action, opt_label, opt_value, opt_noninteraction) {
+          _gaq.push(["_trackEvent", category, action, opt_label, opt_value, opt_noninteraction]);
+          _gaq.push(["b._trackEvent", category, action, opt_label, opt_value, opt_noninteraction]);
+        };
+      }
+    </script>
+  </head>
+
+  <body style='display: none'>
+
+    <section class='slides layout-widescreen'>
+
+      <article>
+        <h1>システム構築にgRPCを導入した話</h1>
+        <h3>golang.tokyo #8</h3>
+        <h3>28 August 2017</h3>
+        
+          <div class="presenter">
+            
+  
+  <p>
+    dice_zu(daisuzu)
+  </p>
+  
+
+          </div>
+        
+          <div class="presenter">
+            
+  
+  <p>
+    
+  </p>
+  
+
+          </div>
+        
+      </article>
+
+  
+  
+      <article >
+      
+        <h3>自己紹介</h3>
+        
+<div class="image">
+  <img src="icon.png">
+</div>
+
+  
+  <p>
+    Twitter: <a href="https://twitter.com/dice_zu" target="_blank">@dice_zu</a>
+<br>
+
+    GitHub: <a href="https://github.com/daisuzu" target="_blank">https://github.com/daisuzu</a>
+<br>
+
+    Blog: <a href="http://daisuzu.hatenablog.com" target="_blank">http://daisuzu.hatenablog.com</a>
+  </p>
+  
+
+  <ul>
+  
+    <li>サーバサイドエンジニア(最近はGoばっかり)</li>
+  
+    <li>Vimmer(プラグイン、雑誌記事、本体パッチ)</li>
+  
+  </ul>
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>gRPCとは？</h3>
+        
+  
+  <p>
+    Google製のRPC
+  </p>
+  
+
+  <ul>
+  
+    <li>Protocol Buffersでインターフェースを定義</li>
+  
+    <li>HTTP/2上でデータを転送</li>
+  
+    <li>Go用のパッケージは <a href="https://godoc.org/google.golang.org/grpc" target="_blank">google.golang.org/grpc</a></li>
+  
+  </ul>
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>構築したシステム</h3>
+        
+  
+  <p>
+    以下のような契約管理システム
+  </p>
+  
+
+  
+  <p>
+    1. クライアントからオーダーを受け付けて、
+<br>
+
+    2. 外部のシステムに送信すると、
+<br>
+
+    3. 非同期で処理結果が返ってくるので、
+<br>
+
+    4. それをクライアントに返す。
+  </p>
+  
+
+  <div class="code" >
+
+
+<pre><span num="1">                      &#39;                                               ::    ___________</span>
+<span num="2">                      &#39;                                &#43;--------&#43;     ::   (           )</span>
+<span num="3">                      &#39;                                | sender | ----::-- (           )</span>
+<span num="4">                      &#39;                                &#43;--------&#43;     ::   (           )</span>
+<span num="5">                      &#39;                               /               ::   (           )</span>
+<span num="6">        &#43;--------&#43;    &#39;    &#43;--------&#43;   &#43;------------&#43;                ::   (  external )</span>
+<span num="7">        | client | ---&#39;--- | server | - | relay node |                ::   (  service  )</span>
+<span num="8">        &#43;--------&#43;    &#39;    &#43;--------&#43;   &#43;------------&#43;                ::   (           )</span>
+<span num="9">                      &#39;                               \               ::   (           )</span>
+<span num="10">                      &#39;                                &#43;----------&#43;   ::   (           )</span>
+<span num="11">                      &#39;                                | receiver | --::-- (           )</span>
+<span num="12">                      &#39;                                &#43;----------&#43;   ::   (___________)</span>
+</pre>
+
+
+</div>
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h2>なぜgRPCを採用したのか</h2>
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>RESTのエンドポイント辛い問題</h3>
+        
+  <ul>
+  
+    <li>契約系のオペレーションはRESTで表現しにくい</li>
+  
+    <li>機能拡張時に破綻する可能性がある</li>
+  
+    <li>実際それで失敗したこともある</li>
+  
+  </ul>
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>コード生成で開発の効率化</h3>
+        
+  <ul>
+  
+    <li>以下のような定義からクライアントとサーバのコードが生成可能</li>
+  
+  </ul>
+
+  <div class="code" >
+
+
+<pre><span num="1">service Contract {</span>
+<span num="2">  rpc Create (CreateRequest) returns (CreateResponse) {}</span>
+<span num="3">  rpc Update (UpdateRequest) returns (UpdateResponse) {}</span>
+<span num="4">  rpc Activate (ActivateRequest) returns (ActivateResponse) {}</span>
+<span num="5"></span>
+<span num="6">  rpc XXX (XXXRequest) returns (XXXResponse) {}</span>
+<span num="7">  rpc YYY (YYYRequest) returns (YYYResponse) {}</span>
+<span num="8">  rpc ZZZ (ZZZRequest) returns (ZZZResponse) {}</span>
+<span num="9">}</span>
+</pre>
+
+
+</div>
+
+  
+  <p>
+    JSON SchemaやSwaggerと比べると、
+  </p>
+  
+
+  <ul>
+  
+    <li>定義ファイルが書きやすい</li>
+  
+    <li>クライアントを自力で実装するのが困難</li>
+  
+  </ul>
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>Streaming RPC</h3>
+        
+  <ul>
+  
+    <li>ポーリングやコールバックなどの実装が不要</li>
+  
+  </ul>
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>他システムの刷新を促進</h3>
+        
+  
+  <p>
+    想定クライアントが
+  </p>
+  
+
+  <ul>
+  
+    <li>Go</li>
+  
+    <li>Python</li>
+  
+    <li>Java</li>
+  
+    <li><i>(もしかしたら)</i> Perl</li>
+  
+  </ul>
+
+  
+  <p>
+    だったので全体的にgRPC対応のモダンなシステムにしたかった
+  </p>
+  
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h2>しかし...</h2>
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>ほとんどのクライアントがRESTを要求</h3>
+        
+  
+  <p>
+    <b>OK</b>
+  </p>
+  
+
+  <ul>
+  
+    <li>Go</li>
+  
+  </ul>
+
+  
+  <p>
+    <b>NG</b>
+  </p>
+  
+
+  <ul>
+  
+    <li>Python</li>
+  
+    <li>Java</li>
+  
+    <li>Perl</li>
+  
+  </ul>
+
+  
+  <p>
+    結局 <a href="https://github.com/grpc-ecosystem/grpc-gateway" target="_blank">grpc-gateway</a> を使ってRESTインターフェースも提供した
+  </p>
+  
+
+  <ul>
+  
+    <li>エンドポイントは残念なことに...</li>
+  
+    <li>コールバックも実装することに...</li>
+  
+  </ul>
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h2>開発を終えての感想</h2>
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>良かったところ</h3>
+        
+  <ul>
+  
+    <li>Streaming RPCが想定通りに使えた</li>
+  
+  </ul>
+
+  <ul>
+  
+    <li>生成されるコードが自分好み</li>
+  
+  </ul>
+
+  
+  <p>
+    メッセージのstructとサービスのinterfaceのみ
+<br>
+
+    余計なものが含まれない
+  </p>
+  
+
+  <ul>
+  
+    <li>パラメータのバインドを <a href="https://godoc.org/google.golang.org/grpc" target="_blank">google.golang.org/grpc</a> に任せられる</li>
+  
+  </ul>
+
+  <div class="code" >
+
+
+<pre><span num="1">type service struct{}</span>
+<span num="2"></span>
+<span num="3">func (s *service) Create(ctx context.Context, in *pb.CreateRequest) (*pb.CreateResponse, error) {</span>
+<span num="4">    return &amp;pb.CreateResponse{}, nil</span>
+<span num="5">}</span>
+<span num="6"></span>
+<span num="7">func main() {</span>
+<span num="8">    s := grpc.NewServer()</span>
+<span num="9">    pb.RegisterContractServer(s, &amp;service{})</span>
+<span num="10"></span>
+<span num="11">    l, _ := net.Listen(&#34;tcp&#34;, ADDR)</span>
+<span num="12">    s.Serve(l)</span>
+<span num="13">}</span>
+</pre>
+
+
+</div>
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>困ったところ</h3>
+        
+  <ul>
+  
+    <li>curlのように使えるクライアントが無い</li>
+  
+  </ul>
+
+  
+  <p>
+    生成されたコード <i>(pbパッケージ)</i> からクライアントを生成するツールを作った
+  </p>
+  
+
+  <ul>
+  
+    <li>サーバのレスポンスにnilのフィールドがあるとpanicした</li>
+  
+  </ul>
+
+  
+  <p>
+    <i>(今は改善されているが)</i> 何も対策をしてないとサーバが落ちる
+<br>
+
+    レスポンスの生成に気をつけつつ、interceptorでハンドリング
+  </p>
+  
+
+  <ul>
+  
+    <li>docker stackでシステムを立ち上げてしばらく経つと接続エラーが発生した</li>
+  
+  </ul>
+
+  
+  <p>
+    gRPCは常時接続だが、無通信の間に接続先コンテナが替わってしまうことがあった
+<br>
+
+    この時、次のリクエストを送信するまでエラーにならないので発見が遅れた
+<br>
+
+    クライアント側の <a href="https://godoc.org/google.golang.org/grpc#WithDialer" target="_blank">grpc.WithDialer</a> でTCPのkeepaliveを設定して回避
+  </p>
+  
+
+      
+      </article>
+  
+  
+  
+      <article >
+      
+        <h3>まとめ</h3>
+        
+  <ul>
+  
+    <li>コード生成のおかげもあってスムーズに開発することができた</li>
+  
+    <li>小さい穴にハマることはあったがgRPC絡みの大きなトラブルは無かった</li>
+  
+    <li>gRPCはもっと流行って良いと思うので</li>
+  
+  </ul>
+
+  
+  <p>
+    <b>興味がある人は是非導入を！</b>
+<br>
+
+    <b>そして知見の共有をお願いしますm(_ _)m</b>
+  </p>
+  
+
+      
+      </article>
+  
+  
+
+      <article>
+        <h3>Thank you</h3>
+        
+          <div class="presenter">
+            
+  
+  <p>
+    dice_zu(daisuzu)
+  </p>
+  
+<p class="link"><a href="http://twitter.com/dice_zu" target="_blank">@dice_zu</a></p><p class="link"><a href="https://github.com/daisuzu" target="_blank">https://github.com/daisuzu</a></p><p class="link"><a href="http://daisuzu.hatenablog.com" target="_blank">http://daisuzu.hatenablog.com</a></p>
+          </div>
+        
+          <div class="presenter">
+            
+  
+  <p>
+    
+  </p>
+  
+
+          </div>
+        
+      </article>
+
+    </section>
+
+    <div id="help">
+      Use the left and right arrow keys or click the left and right
+      edges of the page to navigate between slides.<br>
+      (Press 'H' or navigate to hide this message.)
+    </div>
+
+    
+    <script src='play.js'></script>
+    
+
+    <script>
+      (function() {
+        
+        if (window["location"] && window["location"]["hostname"] == "talks.golang.org") {
+          var ga = document.createElement("script"); ga.type = "text/javascript"; ga.async = true;
+          ga.src = ("https:" == document.location.protocol ? "https://ssl" : "http://www") + ".google-analytics.com/ga.js";
+          var s = document.getElementsByTagName("script")[0]; s.parentNode.insertBefore(ga, s);
+        }
+      })();
+    </script>
+  </body>
+</html>

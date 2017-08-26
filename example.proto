@@ -1,0 +1,9 @@
+service Contract {
+  rpc Create (CreateRequest) returns (CreateResponse) {}
+  rpc Update (UpdateRequest) returns (UpdateResponse) {}
+  rpc Activate (ActivateRequest) returns (ActivateResponse) {}
+
+  rpc XXX (XXXRequest) returns (XXXResponse) {}
+  rpc YYY (YYYRequest) returns (YYYResponse) {}
+  rpc ZZZ (ZZZRequest) returns (ZZZResponse) {}
+}
